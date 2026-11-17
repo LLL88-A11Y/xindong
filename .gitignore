@@ -1,0 +1,16 @@
+node_modules
+dist
+.edgeone
+.env
+.env.local
+
+# Tencent Cloud EdgeOne
+.env
+.edgeone/*
+.tef_dist/*
+  
+# 截图识别文件由 scripts/copy-ocr.mjs 从 node_modules 生成
+public/ocr
+
+# 评测原始事件（体积大）；汇总 .md 保留
+evals/results/*.json

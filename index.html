@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>心懂 · 懂你的决策伙伴</title>
+  <meta name="xindong-version" content="1.6.21" />
+  <meta name="description" content="心懂：帮你想清楚、选得对。内心会议室、打分表、事前验尸。" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path fill='%236c5ce7' d='M16 4C9.4 4 4 8.9 4 15c0 3.1 1.4 5.9 3.7 7.9L6.6 28l5.3-2.7c1.3.5 2.7.7 4.1.7 6.6 0 12-4.9 12-11S22.6 4 16 4z'/><path fill='%23fff' d='M16 21s-6-3.6-6-7.4c0-2 1.5-3.4 3.3-3.4 1.2 0 2.1.7 2.7 1.6.6-.9 1.5-1.6 2.7-1.6 1.8 0 3.3 1.4 3.3 3.4C22 17.4 16 21 16 21z'/></svg>" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div class="brand"><span class="logo"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4C9.4 4 4 8.9 4 15c0 3.1 1.4 5.9 3.7 7.9L6.6 28l5.3-2.7c1.3.5 2.7.7 4.1.7 6.6 0 12-4.9 12-11S22.6 4 16 4z"/><path class="mark-heart" d="M16 21s-6-3.6-6-7.4c0-2 1.5-3.4 3.3-3.4 1.2 0 2.1.7 2.7 1.6.6-.9 1.5-1.6 2.7-1.6 1.8 0 3.3 1.4 3.3 3.4C22 17.4 16 21 16 21z"/></svg></span><div><b>心懂</b><small>帮你想清楚，选得对</small></div></div>
+      <div class="top-actions">
+        <a class="pd-home" href="https://donk666.dpdns.org/" title="回到 Paint Dreams 首页"><i>梦</i><span>首页</span></a>
+        <button class="ghost" id="memBtn" title="心懂记得的事（只存在这台设备上）">记得的事</button>
+        <button class="ghost" id="newChat" title="开始新对话">＋ 新对话</button>
+      </div>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-view="chat">对话</button>
+      <button class="tab" data-view="panel">情绪 & 决策表<span class="dot" id="panelDot"></span></button>
+    </nav>
+
+    <main class="chat" id="chatView">
+      <div class="messages" id="messages">
+        <div class="welcome" id="welcome">
+          <div class="welcome-mark"><svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4C9.4 4 4 8.9 4 15c0 3.1 1.4 5.9 3.7 7.9L6.6 28l5.3-2.7c1.3.5 2.7.7 4.1.7 6.6 0 12-4.9 12-11S22.6 4 16 4z"/><path class="mark-heart" d="M16 21s-6-3.6-6-7.4c0-2 1.5-3.4 3.3-3.4 1.2 0 2.1.7 2.7 1.6.6-.9 1.5-1.6 2.7-1.6 1.8 0 3.3 1.4 3.3 3.4C22 17.4 16 21 16 21z"/></svg></div>
+          <h1>嗨，我是心懂</h1>
+          <div class="memory-card hidden" id="memoryCard"></div>
+          <p>说说你在纠结的事吧。我会先听你说，然后请几位"内心的声音"一起开个会：</p>
+          <div class="cast">
+            <span class="chip c-rational"><i></i>理性派<small>算利弊</small></span>
+            <span class="chip c-emotional"><i></i>感性派<small>问感受</small></span>
+            <span class="chip c-tenth"><i></i>第十人<small>专门唱反调</small></span>
+            <span class="chip c-premortem"><i></i>验尸官<small>先想最坏会怎样</small></span>
+          </div>
+          <p class="sub">如果你只是想倾诉，我也在；和某个人闹别扭了，也可以上传聊天截图，一起想想怎么说。</p>
+          <p class="examples-hint">不知道怎么开口？点一个例子，改成你自己的情况再发：</p>
+          <div class="examples" id="examples">
+            <button>要不要辞职去读研？现在工作稳定但没成长，读研要花两年和存款。</button>
+            <button>两个 offer：大厂月薪 2 万但加班多，小公司 1.5 万但能学到东西。</button>
+            <button>今天被领导当众批评了，我觉得自己什么都做不好。</button>
+            <button>男朋友说我太敏感，我们吵了一架。我想好好跟他说，但不知道怎么开口。</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="composer">
+        <div class="modes" id="modes">
+          <button class="mode active" data-mode="">✨ 自动</button>
+          <button class="mode" data-mode="decision">⚖️ <span class="long">帮我</span>做决定</button>
+          <button class="mode" data-mode="vent">🌙 <span class="long">只想</span>倾诉</button>
+          <button class="mode" data-mode="relation">💬 处理关系</button>
+        </div>
+        <div class="ocr hidden" id="ocr">
+          <div class="ocr-status" id="ocrStatus"></div>
+          <div class="ocr-rows" id="ocrRows"></div>
+          <p class="ocr-note">图片只在你的设备上识别，不会上传。点「对方 / 我」可以换边，文字可以直接改，× 删掉这一条。</p>
+          <div class="ocr-actions"><button type="button" class="ghost" id="ocrCancel">取消</button><button type="button" class="send" id="ocrUse">用这段聊天记录</button></div>
+        </div>
+        <form class="input-row" id="form">
+          <button type="button" class="attach" id="attach" title="上传聊天截图（在你的设备上识别，不上传图片）" aria-label="上传聊天截图">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><circle cx="9" cy="10" r="1.6"/><path d="M4.5 18l5-5 3.5 3.5 2.5-2.5 4 4"/></svg>
+          </button>
+          <input type="file" id="file" accept="image/*" multiple hidden />
+          <textarea id="input" rows="1" placeholder="说说你在纠结的事…" maxlength="4000" title="回车发送，Shift + 回车换行"></textarea>
+          <button type="submit" class="send" id="send">发送</button>
+          <button type="button" class="stop hidden" id="stop">停止</button>
+        </form>
+        <p class="disclaimer">心懂是 AI，不是心理咨询或医疗服务，解读可能不准，以你自己的判断为准。聊天内容会发给 AI 处理，别写真实姓名、电话、住址。有危险请打 <a href="tel:12356"><b>12356</b></a> 或 <span class="nw"><a href="tel:110"><b>110</b></a> / <a href="tel:120"><b>120</b></a>。</span></p>
+      </div>
+    </main>
+
+    <aside class="panel" id="panelView">
+      <section class="card" id="insightCard">
+        <h2>🎭 这次的话里</h2>
+        <p class="hint">只根据你<b>这一次</b>说的话，每次都重新理解，不会给你贴标签。<span id="notmeHint" class="hidden">哪条不准，就点它旁边的「不准」，这次对话里不会再这样说。</span></p>
+        <div id="insightBody" class="empty">还没有内容，先聊几句吧。</div>
+      </section>
+
+      <section class="card decision-empty" id="decisionEmpty"><h2>⚖️ 决策打分表</h2><p class="hint">如果你在几个选择之间纠结，聊几句之后，这里会出现打分表。</p></section>
+
+      <section class="card hidden" id="decisionCard">
+        <h2>⚖️ 决策打分表</h2>
+        <p class="calm-note">现在不用急着做决定，打分表先收起来了。<button type="button" data-open-decision>想看的时候点这里</button></p>
+        <p class="hint">拖动权重，看看结果怎么变。</p>
+        <div id="decisionBody" class="empty">告诉我你在纠结哪几个选项，以及你在乎什么。</div>
+      </section>
+    </aside>
+  </div>
+  <div class="modal hidden" id="memModal" role="dialog" aria-modal="true" aria-labelledby="memTitle">
+    <div class="modal-box">
+      <div class="modal-head"><h2 id="memTitle">心懂记得的事</h2><button type="button" class="ghost" data-close>关闭</button></div>
+      <p class="hint">只记你点了「记住」的事，只记标题，不记你的情绪和心理状态。这些只存在这台设备的浏览器里，心懂的服务器不保存。只有你点「接着聊」时，标题才会放进输入框，发不发由你决定。标成「已经解决了」的事，心懂不会再提。</p>
+      <div id="memList"></div>
+      <div class="modal-foot"><button type="button" class="ghost danger" id="memClear">全部删除</button></div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
