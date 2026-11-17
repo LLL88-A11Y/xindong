@@ -44,7 +44,7 @@ const cases = allCases.filter((c) => (ONLY ? ONLY.split(',').includes(c.id) : AL
 
 // ---------- 发一轮，收集 SSE 事件 ----------
 
-async function sendTurn(conversationId, device, message) {
+async function sendTurn(conversationId, device, message, mode) {
   const started = Date.now();
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), TURN_TIMEOUT_MS);
@@ -57,7 +57,7 @@ async function sendTurn(conversationId, device, message) {
         'makers-conversation-id': conversationId,
         ...(EVAL_TOKEN ? { 'x-eval-token': EVAL_TOKEN } : {}),
       },
-      body: JSON.stringify({ messages: [{ role: 'user', content: message }], device }),
+      body: JSON.stringify({ messages: [{ role: 'user', content: message }], device, ...(mode ? { mode } : {}) }),
       signal: ctrl.signal,
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${(await resp.text()).slice(0, 200)}`);
@@ -163,7 +163,7 @@ async function runCase(c) {
   const device = `eval-${randomUUID().slice(0, 12)}`; // 每段对话一个设备号，和真实用户一样各算各的限流
   const turns = [];
   try {
-    for (const m of c.turns) turns.push(await sendTurn(conversationId, device, m));
+    for (const m of c.turns) turns.push(await sendTurn(conversationId, device, m, c.mode));
   } catch (e) {
     return { ...c, turns, checks: [{ kind: '不变量', name: '请求完成', ok: false, detail: String(e.message || e) }] };
   }
