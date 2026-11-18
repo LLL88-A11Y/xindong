@@ -4,6 +4,7 @@ import { AIMessage, HumanMessage, SystemMessage, type AIMessageChunk, type BaseM
 import type { ChatOpenAI } from '@langchain/openai';
 import * as P from './_prompts';
 import { KNOWLEDGE, type KnowledgeEntry } from './_knowledge';
+import { definition } from './_retrieve';
 
 // ---------- 类型 ----------
 
@@ -14,7 +15,7 @@ export interface Score { option: string; criterion: string; score: number; reaso
 // 用户点了「不准」的解读。只在这次对话里有效，只用来少说，从不交给模型、不用来推测任何东西
 export interface Rejection { kind: 'emotion' | 'distortion'; label: string; quote: string }
 // 解读依据的知识条目。source 为空表示这条没有可靠出处，不对外显示
-export interface Citation { id: string; status: string; source: string }
+export interface Citation { id: string; status: string; source: string; definition: string }
 export interface Emotion { name: string; intensity: number; evidence: string; knowledge?: Citation }
 export interface Distortion { type: string; quote: string; explain: string; reframe: string; knowledge?: Citation }
 
@@ -170,7 +171,7 @@ function mergeRejections(a: Rejection[], b: Rejection[]): Rejection[] {
 // 情绪按标题或近义查条目，思维陷阱按标题查
 const EMOTION_ENTRIES = new Map(KNOWLEDGE.filter((e) => e.kind === '情绪').flatMap((e) => [e.title, ...e.aliases].map((w) => [w, e] as const)));
 const DISTORTION_ENTRIES = new Map(KNOWLEDGE.filter((e) => e.kind === '思维陷阱').map((e) => [e.title, e] as const));
-const citation = (e: KnowledgeEntry): Citation => ({ id: e.id, status: e.status, source: e.status === '待补' ? '' : e.source });
+const citation = (e: KnowledgeEntry): Citation => ({ id: e.id, status: e.status, source: e.status === '待补' ? '' : e.source, definition: definition(e) });
 
 /**
  * ⭐ 底层原则的代码级保障（不依赖模型自觉）：

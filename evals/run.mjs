@@ -116,7 +116,7 @@ const knowledgeSrc = readFileSync(join(here, '../agents/chat/_knowledge.ts'), 'u
 const KNOWLEDGE = new Map(JSON.parse(knowledgeSrc.slice(knowledgeSrc.indexOf('= [') + 2, knowledgeSrc.lastIndexOf(';'))).map((e) => [e.id, e]));
 const cited = (k, kind, title) => {
   const e = KNOWLEDGE.get(k?.id);
-  return !!e && e.kind === kind && e.title === title && (e.status === '待补' ? k.source === '' : k.source === e.source);
+  return !!e && !!k.definition && e.kind === kind && e.title === title && (e.status === '待补' ? k.source === '' : k.source === e.source);
 };
 const ROLE_TAG = /【(心懂|理性派|感性派|第十人|验尸官|主持人)】|(^|\n)\s*(心懂|理性派|感性派|第十人|验尸官|主持人)\s*[：:]/;
 

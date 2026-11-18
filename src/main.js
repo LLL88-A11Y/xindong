@@ -209,6 +209,15 @@ function restore() {
 }
 
 // ---------- 情绪卡片（每轮重新生成，不累积） ----------
+// 解读背后的知识条目：默认收起，点开看定义和出处。只有核对通过的才叫"出处"
+function basisHTML(k) {
+  if (!k?.definition) return '';
+  const origin = k.status === '通过' ? `出处：${esc(k.source)}`
+    : k.status === '部分' ? `参考：${esc(k.source)}。这段说明由心懂整理，不是书中原文。`
+    : '这段说明由心懂整理，暂无可核对的出处。';
+  return `<details class="basis"><summary>知识依据</summary><p>${esc(k.definition)}</p><p class="quote">${origin}</p><p class="quote">这是对这个词的说明，不是对你的判断。</p></details>`;
+}
+
 let turnInsight = null; // 这一轮的模式和风险，决定要不要问"记住这件事吗"
 function renderInsight(ev) {
   const { emotions = [], distortions = [], risk } = ev;
@@ -249,13 +258,13 @@ function renderInsight(ev) {
   for (const e of emotions) {
     html += `<div class="emo" data-item><div class="emo-top"><span>${esc(e.name)}</span><span class="quote">强度 ${e.intensity}/5</span></div>
       <div class="bar"><i style="width:${e.intensity * 20}%"></i></div>
-      <div class="item-foot"><span class="quote">依据：“${esc(e.evidence)}”</span>${notme({ kind: 'emotion', label: e.name, quote: e.evidence })}</div></div>`;
+      <div class="item-foot"><span class="quote">依据：“${esc(e.evidence)}”</span>${notme({ kind: 'emotion', label: e.name, quote: e.evidence })}</div>${basisHTML(e.knowledge)}</div>`;
   }
   for (const d of distortions) {
     html += `<div class="distort" data-item><div>“${esc(d.quote)}”</div>
       <div>可能有一点 <b>${esc(d.type)}</b> 的味道：${esc((d.explain || '').replace(/^这句话?可能有一?点[^：:，,。]*[：:，,]?\s*/, ''))}</div>
       ${d.reframe ? `<div class="reframe">换个角度：${esc(d.reframe)}</div>` : ''}
-      <div class="item-foot">${notme({ kind: 'distortion', label: d.type, quote: d.quote })}</div></div>`;
+      <div class="item-foot">${notme({ kind: 'distortion', label: d.type, quote: d.quote })}</div>${basisHTML(d.knowledge)}</div>`;
   }
   els.insightBody.innerHTML = html;
   els.notmeHint.classList.toggle('hidden', !insightItems.length);

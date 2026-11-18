@@ -378,7 +378,7 @@ export const KNOWLEDGE: KnowledgeEntry[] = [
       "想找个地缝",
       "看不起自己"
     ],
-    "source": "June P. Tangney & Ronda L. Dearing《Shame and Guilt》(Guilford, 2002)，同 E07",
+    "source": "June P. Tangney & Ronda L. Dearing《Shame and Guilt》(Guilford, 2002)，内疚指向行为、羞耻指向自我的区分",
     "status": "通过",
     "checked": "2026-11-18",
     "body": "觉得**整个人**是不好的、不够格的，常伴随想躲起来、不想被人看见。\n可能在意：被接纳，不被评判。\n回应：特别小心，不评价、不追问细节；帮他把\"做错的事\"和\"这个人\"分开。\n不要误判：\"社死\"\"好尴尬\"多是一时的尴尬，不要升级成羞耻；\"没脸活\"可能是危险信号，先按危机规则判断。"

@@ -233,6 +233,10 @@ textarea:focus { border-color: var(--accent); }
 .distort .reframe { margin-top: 4px; }
 .item-foot { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-top: 2px; }
 .notme { flex: none; margin-left: auto; background: none; border: 1px solid var(--line); border-radius: 999px; font-size: 11.5px; color: var(--sub); padding: 0 8px; }
+.basis { margin-top: 4px; font-size: 12.5px; line-height: 1.6; }
+.basis summary { width: fit-content; cursor: pointer; font-size: 12px; color: var(--sub); }
+.basis summary:hover, .basis[open] summary { color: var(--accent); }
+.basis p { margin: 4px 0 0; overflow-wrap: anywhere; }
 .notme:hover { border-color: var(--accent); color: var(--accent); }
 .notme-done { font-size: 12px; color: var(--guide); margin-top: 6px; }
 .risk-note { background: var(--guide-bg); color: var(--guide); border-radius: 10px; padding: 8px 10px; font-size: 13px; margin-bottom: 8px; }

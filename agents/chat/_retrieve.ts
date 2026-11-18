@@ -14,7 +14,12 @@ function bigrams(s: string): Set<string> {
 }
 
 // 正文只取定义部分：回应建议和"不要误判"里写的是别的情况，参与匹配会把不相干的话召回来
-export const definition = (e: KnowledgeEntry) => e.body.split('\n').filter((l) => !/^(可能在意|回应|不要误判)/.test(l)).join('');
+// 这段文字也会显示给用户，所以去掉 Markdown 粗体和"（E23）"这样的内部编号
+export const definition = (e: KnowledgeEntry) => e.body.split('\n')
+  .filter((l) => !/^(可能在意|回应|不要误判)/.test(l))
+  .join('')
+  .replace(/\*\*/g, '')
+  .replace(/（[A-Z]\d{2,3}）/g, '');
 
 const docs = KNOWLEDGE.map((entry) => ({
   entry,
