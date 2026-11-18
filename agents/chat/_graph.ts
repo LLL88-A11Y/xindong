@@ -1,6 +1,6 @@
 import { Annotation, MessagesAnnotation, StateGraph, START, END } from '@langchain/langgraph';
 import type { LangGraphRunnableConfig } from '@langchain/langgraph';
-import { AIMessage, HumanMessage, SystemMessage, type BaseMessage } from '@langchain/core/messages';
+import { AIMessage, HumanMessage, SystemMessage, type AIMessageChunk, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
 import * as P from './_prompts';
 
@@ -257,6 +257,11 @@ function notesText(a: Analysis | null): string {
   return parts.join('\n') || '（无）';
 }
 
+// 计量：每次模型调用记一笔耗时和 token，作为 usage 事件交给 index.ts 汇总（前端不显示）。调用失败时 token 记 0
+function usageEvent(node: string, started: number, u?: { input_tokens?: number; output_tokens?: number; input_token_details?: { cache_read?: number } } | null) {
+  return { type: 'usage', node, ms: Date.now() - started, input: u?.input_tokens ?? 0, output: u?.output_tokens ?? 0, cached: u?.input_token_details?.cache_read ?? 0 };
+}
+
 // ---------- 构图 ----------
 
 export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointer: any, store: any, seatModel: ChatOpenAI = speaker) {
@@ -284,12 +289,15 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
         emit(s.rest);
       } else emit(h.replace(LEAD_TAG, ''));
     };
+    const started = Date.now();
+    let usage: AIMessageChunk['usage_metadata'] = undefined; // 流式时用量在最后一段数据里
     try {
       const stream = await model.stream(
         [new SystemMessage(system), new HumanMessage(context)],
         { signal: config.signal },
       );
       for await (const chunk of stream) {
+        if (chunk.usage_metadata) usage = chunk.usage_metadata;
         const t = typeof chunk.content === 'string' ? chunk.content : '';
         if (!t) continue;
         if (head === null) { emit(t); continue; }
@@ -305,6 +313,7 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
       write({ type: 'error_message', role, content: friendlyError(e) });
     }
     if (head) flushHead(head);
+    write(usageEvent(role, started, usage));
     write({ type: 'speaker_end', role });
     return new AIMessage({ content: full, name: role, additional_kwargs: stance ? { stance } : {} });
   }
@@ -341,11 +350,14 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
 
     let parsed: Analysis | null = null;
     let analystDown = false; // 分析员没回应（额度用完、超时……）：前端要说"这次没法分析"，不能装作"没听出情绪"
+    const started = Date.now();
     try {
       const res = await analyst.invoke([new SystemMessage(P.ANALYZE_PROMPT), new HumanMessage(input)], { signal: config.signal });
+      write(usageEvent('analyze', started, res.usage_metadata));
       parsed = parseJSON<Analysis>(textOf(res as BaseMessage));
     } catch (e) {
       if ((e as Error).name === 'AbortError' || config.signal?.aborted) throw e;
+      write(usageEvent('analyze', started));
       analystDown = true;
     }
     const base: Analysis = {
@@ -453,11 +465,13 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
     const d = state.decision!;
     write({ type: 'status', content: '正在给各个选项打分…' });
     let scores: Score[] = [];
+    const started = Date.now();
     try {
       const res = await analyst.invoke(
         [new SystemMessage(P.SCORE_PROMPT), new HumanMessage(`【决策信息】\n${JSON.stringify(d)}\n\n【对话记录】\n${transcript(state.messages, 12)}`)],
         { signal: config.signal },
       );
+      write(usageEvent('score', started, res.usage_metadata));
       const parsed = parseJSON<{ scores: Score[] }>(textOf(res as BaseMessage));
       scores = (parsed?.scores ?? [])
         .filter((s) => d.options.includes(s.option) && d.criteria.some((c) => c.name === s.criterion))
@@ -465,6 +479,7 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
         .map((s) => ({ ...s, basis: (s.basis === 'said' && !GUESS_HINT.test(s.reason ?? '') ? 'said' : 'guess') as Score['basis'] }));
     } catch (e) {
       if ((e as Error).name === 'AbortError' || config.signal?.aborted) throw e;
+      write(usageEvent('score', started));
     }
     // 缺的组合补中间分，保证表格完整（标记为估计）
     for (const o of d.options) for (const c of d.criteria) {

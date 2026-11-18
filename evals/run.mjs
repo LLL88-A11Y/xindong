@@ -80,7 +80,7 @@ async function sendTurn(conversationId, device, message, mode) {
   } finally {
     clearTimeout(timer);
   }
-  return { message, events, ms: Date.now() - started, ...summarize(events) };
+  return { message, events, ms: Date.now() - started, metrics: events.find((e) => e.type === 'metrics') ?? null, ...summarize(events) };
 }
 
 // 把事件流整理成：每个角色说了什么、风险判断、走了哪条路
@@ -189,12 +189,35 @@ async function pool(items, n, fn) {
 function pct(a, b) { return b ? `${Math.round((a / b) * 100)}%` : '—'; }
 function quantile(xs, q) { const s = [...xs].sort((a, b) => a - b); return s.length ? s[Math.min(s.length - 1, Math.floor(q * s.length))] : 0; }
 
+// 耗时拆分和 token 用量（来自服务端的 metrics 事件；没有 metrics 的旧版本服务端就跳过这一节）
+const sec = (ms) => (ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`);
+const callsOf = (t) => t.metrics?.calls ?? [];
+const tokens = (t) => callsOf(t).reduce((a, c) => ({ input: a.input + c.input, output: a.output + c.output }), { input: 0, output: 0 });
+function timingTable(plain, meetings) {
+  const withM = plain.filter((t) => t.metrics);
+  if (!withM.length) return [];
+  const row = (name, xs) => `| ${name} | ${sec(quantile(xs, 0.5))} | ${sec(quantile(xs, 0.95))} |`;
+  const analyze = withM.flatMap((t) => callsOf(t).filter((c) => c.node === 'analyze').map((c) => c.ms));
+  const first = withM.map((t) => t.metrics.first_text_ms).filter((x) => x != null);
+  const avg = (ts, k) => Math.round(ts.reduce((a, t) => a + tokens(t)[k], 0) / ts.length);
+  const L = ['## 耗时拆分（服务端计时，不含开会）', '', '| 阶段 | p50 | p95 |', '|---|---|---|',
+    row('分析员', analyze), row('首字（第一段回复推给前端）', first), row('服务端总耗时', withM.map((t) => t.metrics.total_ms)), ''];
+  L.push('## token 用量（每轮平均）', '', '| 类型 | 轮数 | 输入 | 输出 | 模型调用次数 |', '|---|---|---|---|---|');
+  L.push(`| 普通一轮 | ${withM.length} | ${avg(withM, 'input')} | ${avg(withM, 'output')} | ${(withM.reduce((a, t) => a + callsOf(t).length, 0) / withM.length).toFixed(1)} |`);
+  const mm = meetings.filter((t) => t.metrics);
+  if (mm.length) L.push(`| 开会一轮 | ${mm.length} | ${avg(mm, 'input')} | ${avg(mm, 'output')} | ${(mm.reduce((a, t) => a + callsOf(t).length, 0) / mm.length).toFixed(1)} |`);
+  L.push('');
+  return L;
+}
+
 function report(results, started) {
   const checks = results.flatMap((r) => r.checks);
   const inv = checks.filter((x) => x.kind === '不变量');
   const beh = checks.filter((x) => x.kind === '行为');
   const casesOk = results.filter((r) => r.checks.every((x) => x.ok)).length;
-  const lat = results.flatMap((r) => r.turns.filter((t) => !t.events.some((e) => e.type === 'scores')).map((t) => t.ms));
+  const plain = results.flatMap((r) => r.turns.filter((t) => !t.events.some((e) => e.type === 'scores')));
+  const meetings = results.flatMap((r) => r.turns.filter((t) => t.events.some((e) => e.type === 'scores')));
+  const lat = plain.map((t) => t.ms);
   const groups = [...new Set(results.map((r) => r.group))];
   const L = [];
   L.push(`# 心懂评测结果`, '');
@@ -204,6 +227,7 @@ function report(results, started) {
   L.push(`- 不变量：${inv.filter((x) => x.ok).length}/${inv.length} 通过`);
   L.push(`- 行为检查：${beh.filter((x) => x.ok).length}/${beh.length} 通过（${pct(beh.filter((x) => x.ok).length, beh.length)}）`);
   L.push(`- 单轮耗时（不含开会）：p50 ${(quantile(lat, 0.5) / 1000).toFixed(1)}s，p95 ${(quantile(lat, 0.95) / 1000).toFixed(1)}s`, '');
+  L.push(...timingTable(plain, meetings));
   L.push('## 分组', '', '| 分组 | 用例 | 全部通过 |', '|---|---|---|');
   for (const g of groups) {
     const rs = results.filter((r) => r.group === g);
@@ -222,7 +246,7 @@ function report(results, started) {
     for (const t of r.turns) {
       L.push(`> **用户**：${t.message}`, '');
       const ins = t.insight;
-      if (ins) L.push(`<sub>risk=${ins.risk} at_risk=${ins.at_risk || '—'} mode=${ins.mode} 情绪=${(ins.emotions ?? []).map((e) => `${e.name}「${e.evidence}」`).join('、') || '无'} · 路由=${t.route} · ${(t.ms / 1000).toFixed(1)}s</sub>`, '');
+      if (ins) L.push(`<sub>risk=${ins.risk} at_risk=${ins.at_risk || '—'} mode=${ins.mode} 情绪=${(ins.emotions ?? []).map((e) => `${e.name}「${e.evidence}」`).join('、') || '无'} · 路由=${t.route} · ${(t.ms / 1000).toFixed(1)}s${t.metrics ? ` · 分析 ${sec(callsOf(t).find((c) => c.node === 'analyze')?.ms)} · 首字 ${sec(t.metrics.first_text_ms)} · ${tokens(t).input}+${tokens(t).output} tok` : ''}</sub>`, '');
       for (const rep of t.replies) L.push(`**${rep.role}**：${rep.text.trim().replace(/\n/g, '  \n')}`, '');
     }
   }

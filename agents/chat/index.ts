@@ -67,8 +67,11 @@ async function checkRateLimit(lgStore: any, keys: Array<[string, number]>): Prom
 
 interface TurnInput { message: string; modeHint: string; userWeights: Record<string, number> | null; rejected: Rejection[] }
 
-async function* eventStream(graph: any, input: TurnInput, conversationId: string, signal?: AbortSignal) {
+async function* eventStream(graph: any, input: TurnInput, conversationId: string, startedAt: number, signal?: AbortSignal) {
   const { message, modeHint, userWeights, rejected } = input;
+  // 计量：图里每次模型调用发一个 usage 事件，在这里收起来；首字时间 = 第一段回复文字推给前端的时刻
+  const calls: Record<string, unknown>[] = [];
+  let firstTextMs = 0;
   try {
     const stream = await graph.stream(
       { messages: [{ role: 'user', content: message }], modeHint, turn: null, userWeights, rejected },
@@ -76,7 +79,11 @@ async function* eventStream(graph: any, input: TurnInput, conversationId: string
     );
     for await (const chunk of stream) {
       if (signal?.aborted) break;
-      if (chunk && typeof chunk === 'object') yield sseEvent(chunk as Record<string, unknown>);
+      if (!chunk || typeof chunk !== 'object') continue;
+      const ev = chunk as Record<string, unknown>;
+      if (ev.type === 'usage') { calls.push(ev); continue; }
+      if (!firstTextMs && ev.type === 'ai_response' && ev.content) firstTextMs = Date.now() - startedAt;
+      yield sseEvent(ev);
     }
   } catch (e) {
     const err = e as Error;
@@ -87,10 +94,16 @@ async function* eventStream(graph: any, input: TurnInput, conversationId: string
       yield sseEvent({ type: 'error_message', content: friendlyError(err) });
     }
   }
+  if (!signal?.aborted) {
+    const metrics = { type: 'metrics', total_ms: Date.now() - startedAt, first_text_ms: firstTextMs || null, calls };
+    logger.log('metrics', JSON.stringify(metrics));
+    yield sseEvent(metrics);
+  }
   yield 'data: [DONE]\n\n';
 }
 
 export async function onRequest(context: any) {
+  const startedAt = Date.now();
   const { request, env, conversation_id: conversationId, store } = context;
 
   // 只读 messages；历史由 checkpointer 保存，所以只取最新一条用户消息
@@ -138,5 +151,5 @@ export async function onRequest(context: any) {
     graphCache.set(checkpointer, graph);
   }
 
-  return createSSEResponse((sig) => eventStream(graph, input, conversationId, sig), signal);
+  return createSSEResponse((sig) => eventStream(graph, input, conversationId, startedAt, sig), signal);
 }
