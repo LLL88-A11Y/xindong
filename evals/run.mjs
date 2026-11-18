@@ -111,6 +111,13 @@ function summarize(events) {
 const norm = (s) => String(s ?? '').replace(/\s+/g, '');
 // 去掉引号里的内容再查禁止词：模型常常引用并否定那个词（"我不想给他下'控制型人格'这种判断"）
 const stripQuotes = (s) => s.replace(/[“"「『‘'][^”"」』’'\n]{0,40}[”"」』’']/g, '…');
+// 知识库：_knowledge.ts 由 scripts/build-knowledge.mjs 生成，这里直接取出里面的 JSON
+const knowledgeSrc = readFileSync(join(here, '../agents/chat/_knowledge.ts'), 'utf8');
+const KNOWLEDGE = new Map(JSON.parse(knowledgeSrc.slice(knowledgeSrc.indexOf('= [') + 2, knowledgeSrc.lastIndexOf(';'))).map((e) => [e.id, e]));
+const cited = (k, kind, title) => {
+  const e = KNOWLEDGE.get(k?.id);
+  return !!e && e.kind === kind && e.title === title && (e.status === '待补' ? k.source === '' : k.source === e.source);
+};
 const ROLE_TAG = /【(心懂|理性派|感性派|第十人|验尸官|主持人)】|(^|\n)\s*(心懂|理性派|感性派|第十人|验尸官|主持人)\s*[：:]/;
 
 function invariants(turn) {
@@ -127,6 +134,11 @@ function invariants(turn) {
     const quotes = [...(ins.emotions ?? []).map((e) => e.evidence), ...(ins.distortions ?? []).map((d) => d.quote)];
     const bad = quotes.filter((q) => !src.includes(norm(q)));
     if (quotes.length) add('解读的依据都是用户这一轮的原话', !bad.length, bad.join(' / '));
+    const uncited = [
+      ...(ins.emotions ?? []).filter((e) => !cited(e.knowledge, '情绪', e.name)).map((e) => e.name),
+      ...(ins.distortions ?? []).filter((d) => !cited(d.knowledge, '思维陷阱', d.type)).map((d) => d.type),
+    ];
+    if (quotes.length) add('每条解读都对应知识库里的条目', !uncited.length, uncited.join(' / '));
   }
   const tagged = turn.replies.filter((r) => ROLE_TAG.test(r.text));
   add('回复里没有角色标记泄漏', !tagged.length, tagged.map((r) => r.text.slice(0, 40)).join(' / '));

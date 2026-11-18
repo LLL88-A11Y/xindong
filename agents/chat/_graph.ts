@@ -3,6 +3,7 @@ import type { LangGraphRunnableConfig } from '@langchain/langgraph';
 import { AIMessage, HumanMessage, SystemMessage, type AIMessageChunk, type BaseMessage } from '@langchain/core/messages';
 import type { ChatOpenAI } from '@langchain/openai';
 import * as P from './_prompts';
+import { KNOWLEDGE, type KnowledgeEntry } from './_knowledge';
 
 // ---------- 类型 ----------
 
@@ -12,8 +13,10 @@ export interface Decision { question: string; options: string[]; criteria: Crite
 export interface Score { option: string; criterion: string; score: number; reason: string; basis: 'said' | 'guess' }
 // 用户点了「不准」的解读。只在这次对话里有效，只用来少说，从不交给模型、不用来推测任何东西
 export interface Rejection { kind: 'emotion' | 'distortion'; label: string; quote: string }
-export interface Emotion { name: string; intensity: number; evidence: string }
-export interface Distortion { type: string; quote: string; explain: string; reframe: string }
+// 解读依据的知识条目。source 为空表示这条没有可靠出处，不对外显示
+export interface Citation { id: string; status: string; source: string }
+export interface Emotion { name: string; intensity: number; evidence: string; knowledge?: Citation }
+export interface Distortion { type: string; quote: string; explain: string; reframe: string; knowledge?: Citation }
 
 export interface Analysis {
   risk: 'none' | 'concern' | 'high';
@@ -150,11 +153,17 @@ function mergeRejections(a: Rejection[], b: Rejection[]): Rejection[] {
   return out.slice(-50);
 }
 
+// 情绪按标题或近义查条目，思维陷阱按标题查
+const EMOTION_ENTRIES = new Map(KNOWLEDGE.filter((e) => e.kind === '情绪').flatMap((e) => [e.title, ...e.aliases].map((w) => [w, e] as const)));
+const DISTORTION_ENTRIES = new Map(KNOWLEDGE.filter((e) => e.kind === '思维陷阱').map((e) => [e.title, e] as const));
+const citation = (e: KnowledgeEntry): Citation => ({ id: e.id, status: e.status, source: e.status === '待补' ? '' : e.source });
+
 /**
  * ⭐ 底层原则的代码级保障（不依赖模型自觉）：
  * 任何情绪 / 思维陷阱的解读，都必须能在用户「这一次」的原话里找到依据，否则直接丢弃。
  * - 依据不是用户最新消息里的原文 → 丢弃（防止拿过去的话、别人的话、或凭空推测）
  * - 依据太短（少于 2 个字）→ 丢弃（依据不足）
+ * - 情绪名 / 思维陷阱类型在知识库里查不到 → 丢弃；查到的由代码附上条目编号和出处，不让模型自己填
  * - 用户点过「不准」的 → 丢弃：思维陷阱按类型（这次对话里不再提）；情绪只按"同一句话上的同一个情绪"（情绪本来就会变）
  * - 数量封顶，强度限定在 1~5
  */
@@ -163,14 +172,24 @@ export function enforceEvidence(a: Analysis, latest: string, rejected: Rejection
   const grounded = (q: unknown) => typeof q === 'string' && norm(q).length >= 2 && src.includes(norm(q));
   const noType = new Set(rejected.filter((r) => r.kind === 'distortion').map((r) => r.label));
   const noEmotion = new Set(rejected.filter((r) => r.kind === 'emotion').map((r) => `${r.label}|${norm(r.quote)}`));
+  const seen = new Set<string>(); // 近义词归并后，同一种情绪只留一条
   return {
     ...a,
     emotions: (Array.isArray(a.emotions) ? a.emotions : [])
-      .filter((e) => e && typeof e.name === 'string' && grounded(e.evidence) && !noEmotion.has(`${e.name}|${norm(e.evidence)}`))
+      .flatMap((e) => {
+        const entry = typeof e?.name === 'string' ? EMOTION_ENTRIES.get(e.name.trim()) : undefined;
+        if (!entry || seen.has(entry.title) || !grounded(e.evidence) || noEmotion.has(`${entry.title}|${norm(e.evidence)}`)) return [];
+        seen.add(entry.title);
+        return [{ ...e, name: entry.title, knowledge: citation(entry) }];
+      })
       .slice(0, 3)
       .map((e) => ({ ...e, intensity: Math.min(5, Math.max(1, Math.round(Number(e.intensity) || 3))) })),
     distortions: (Array.isArray(a.distortions) ? a.distortions : [])
-      .filter((d) => d && typeof d.type === 'string' && grounded(d.quote) && !noType.has(d.type))
+      .flatMap((d) => {
+        const entry = typeof d?.type === 'string' ? DISTORTION_ENTRIES.get(d.type.trim()) : undefined;
+        if (!entry || !grounded(d.quote) || noType.has(entry.title)) return [];
+        return [{ ...d, type: entry.title, knowledge: citation(entry) }];
+      })
       .slice(0, 2),
   };
 }

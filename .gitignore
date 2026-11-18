@@ -14,3 +14,6 @@ public/ocr
 
 # 评测原始事件（体积大）；汇总 .md 保留
 evals/results/*.json
+
+# 知识库审核时留的备份
+knowledge/*.bak-*
