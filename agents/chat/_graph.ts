@@ -50,6 +50,7 @@ const State = Annotation.Root({
   offeredMeeting: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
   turn: Annotation<Analysis | null>({ reducer: (_a, b) => b, default: () => null }),
   modeHint: Annotation<string>({ reducer: (_a, b) => b, default: () => '' }),
+  recentCrisis: Annotation<boolean>({ reducer: (_a, b) => b, default: () => false }),
   // 「不准」：这次对话里被用户否定的解读（新对话 = 新 thread，自然清零）
   rejected: Annotation<Rejection[]>({ reducer: mergeRejections, default: () => [] }),
   // 用户在打分表里亲手调过的权重，覆盖分析员的估计
@@ -87,6 +88,19 @@ function textOf(m: BaseMessage): string {
 // 用户贴进来的聊天记录里，"对方："开头的行是别人说的话：不能当作用户本人情绪的依据，也不触发用户的危机关键词
 function ownWords(text: string): string {
   return text.split('\n').filter((l) => !/^\s*对方\s*[：:]/.test(l)).join('\n');
+}
+
+// 图中途出错时（多半是对话存储读写失败）的危机兜底：这一轮是危机就返回要发给前端的事件，不是则返回 null。
+// 不依赖存储和模型。insight 是这一轮已经发出的分析结果，还没发出时为 null
+export function crisisFallback(message: string, insight: Record<string, unknown> | null): Record<string, unknown>[] | null {
+  if (insight?.risk !== 'high' && !hasCrisisWord(ownWords(message))) return null;
+  const atRisk = insight?.at_risk === 'other' ? 'other' : 'self';
+  return [
+    ...(insight ? [] : [{ type: 'insight', unavailable: true, risk: 'high', at_risk: atRisk, mode: 'vent', emotions: [], distortions: [] }]),
+    { type: 'speaker', role: 'guide' },
+    { type: 'ai_response', role: 'guide', content: atRisk === 'other' ? P.CRISIS_OTHER_MESSAGE : P.CRISIS_MESSAGE },
+    { type: 'speaker_end', role: 'guide' },
+  ];
 }
 
 function latestUserText(messages: BaseMessage[]): string {
@@ -364,6 +378,7 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
       `【上一轮的决策信息】\n${state.decision ? JSON.stringify(state.decision) : 'null'}`,
       `【之前是否已针对当前选项开过会】${state.debatedKey && state.debatedKey === decisionKey(state.decision) ? '是' : '否'}`,
       state.modeHint ? `【用户手动选择的模式】${state.modeHint}` : '',
+      state.recentCrisis ? P.RECENT_CRISIS_NOTE : '',
       `【用户最新一条消息】\n${latest}`,
     ].filter(Boolean).join('\n\n');
 

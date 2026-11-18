@@ -1,6 +1,6 @@
 import { createLogger, createSSEResponse, jsonResponse, sseEvent } from '../_shared';
 import { createModel, getAgentEnv } from '../_model';
-import { buildGraph, friendlyError, type Rejection } from './_graph';
+import { buildGraph, crisisFallback, friendlyError, type Rejection } from './_graph';
 
 const logger = createLogger('chat');
 
@@ -65,16 +65,18 @@ async function checkRateLimit(lgStore: any, keys: Array<[string, number]>): Prom
   return null;
 }
 
-interface TurnInput { message: string; modeHint: string; userWeights: Record<string, number> | null; rejected: Rejection[] }
+interface TurnInput { message: string; modeHint: string; userWeights: Record<string, number> | null; rejected: Rejection[]; recentCrisis: boolean }
 
 async function* eventStream(graph: any, input: TurnInput, conversationId: string, startedAt: number, signal?: AbortSignal) {
-  const { message, modeHint, userWeights, rejected } = input;
+  const { message, modeHint, userWeights, rejected, recentCrisis } = input;
   // 计量：图里每次模型调用发一个 usage 事件，在这里收起来；首字时间 = 第一段回复文字推给前端的时刻
   const calls: Record<string, unknown>[] = [];
   let firstTextMs = 0;
+  let insight: Record<string, unknown> | null = null;
+  let replied = false;
   try {
     const stream = await graph.stream(
-      { messages: [{ role: 'user', content: message }], modeHint, turn: null, userWeights, rejected },
+      { messages: [{ role: 'user', content: message }], modeHint, turn: null, userWeights, rejected, recentCrisis },
       { streamMode: 'custom', signal, configurable: { thread_id: conversationId }, recursionLimit: 20 },
     );
     for await (const chunk of stream) {
@@ -82,12 +84,21 @@ async function* eventStream(graph: any, input: TurnInput, conversationId: string
       if (!chunk || typeof chunk !== 'object') continue;
       const ev = chunk as Record<string, unknown>;
       if (ev.type === 'usage') { calls.push(ev); continue; }
-      if (!firstTextMs && ev.type === 'ai_response' && ev.content) firstTextMs = Date.now() - startedAt;
+      if (ev.type === 'insight') insight = ev;
+      if (ev.type === 'ai_response' && ev.content) {
+        replied = true;
+        if (!firstTextMs) firstTextMs = Date.now() - startedAt;
+      }
       yield sseEvent(ev);
     }
   } catch (e) {
     const err = e as Error;
-    if (err.name === 'MemoryCorruptError') {
+    const rescue = err.name !== 'AbortError' && !signal?.aborted ? crisisFallback(message, insight) : null;
+    if (rescue) {
+      // 危机时只给固定的求助文字：没发出去就补发，发出去了就不再跟一句报错
+      logger.error('stream failed in crisis turn', err);
+      if (!replied) for (const ev of rescue) yield sseEvent(ev);
+    } else if (err.name === 'MemoryCorruptError') {
       yield sseEvent({ type: 'error_message', code: 'AGENT_STATE_CORRUPT', content: '这段对话的记录损坏了，请点「新对话」重新开始。' });
     } else if (err.name !== 'AbortError' && !signal?.aborted) {
       logger.error('stream failed', err);
@@ -120,6 +131,8 @@ export async function onRequest(context: any) {
     modeHint: rawMode === 'decision' || rawMode === 'vent' || rawMode === 'relation' ? rawMode : '',
     userWeights: parseWeights(request?.body?.weights),
     rejected: parseRejected(request?.body?.rejected),
+    // 前端记的"这段对话出现过危险信号"。可以伪造，但只会让风险判断更谨慎
+    recentCrisis: request?.body?.recent_crisis === true,
   };
   const signal = request?.signal as AbortSignal | undefined;
 

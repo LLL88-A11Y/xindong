@@ -60,7 +60,8 @@ try { deviceId = localStorage.getItem(DEVICE_KEY) || ''; if (!deviceId) { device
 
 // state.history：发给后端的 {role, content}；state.items：界面上显示的内容（用于刷新恢复）
 // state.rejected：这次对话里点过「不准」的解读；state.weightsByUser：权重是用户亲手调的
-const emptyState = () => ({ history: [], items: [], decision: null, scores: null, weights: null, weightsByUser: false, rejected: [], memoryOffered: false });
+// state.recentCrisis：这段对话出现过危险信号。服务器的对话记录可能没存上，由这里记住，只记这一件事，不记内容
+const emptyState = () => ({ history: [], items: [], decision: null, scores: null, weights: null, weightsByUser: false, rejected: [], memoryOffered: false, recentCrisis: false });
 let state = { ...emptyState(), ...store.get(STATE_KEY, {}) };
 let mode = '';
 let busy = false;
@@ -212,6 +213,7 @@ let turnInsight = null; // 这一轮的模式和风险，决定要不要问"记�
 function renderInsight(ev) {
   const { emotions = [], distortions = [], risk } = ev;
   turnInsight = { mode: ev.mode, risk };
+  if (risk === 'high' && !state.recentCrisis) { state.recentCrisis = true; save(); }
   turnCalm = (risk && risk !== 'none') || ev.mode === 'vent';
   calmOpen = false;
   syncDecisionCard();
@@ -500,6 +502,7 @@ async function send(text) {
       body: JSON.stringify({
         messages: outgoing, mode, device: deviceId || undefined,
         rejected: state.rejected,
+        recent_crisis: state.recentCrisis || undefined,
         weights: state.weightsByUser ? state.weights : undefined,
       }),
       signal: controller.signal,
