@@ -210,12 +210,12 @@ function restore() {
 
 // ---------- 情绪卡片（每轮重新生成，不累积） ----------
 // 解读背后的知识条目：默认收起，点开看定义和出处。只有核对通过的才叫"出处"
-function basisHTML(k) {
+function basisHTML(k, label = '知识依据', note = '这是对这个词的说明，不是对你的判断。') {
   if (!k?.definition) return '';
   const origin = k.status === '通过' ? `出处：${esc(k.source)}`
     : k.status === '部分' ? `参考：${esc(k.source)}。这段说明由心懂整理，不是书中原文。`
     : '这段说明由心懂整理，暂无可核对的出处。';
-  return `<details class="basis"><summary>知识依据</summary><p>${esc(k.definition)}</p><p class="quote">${origin}</p><p class="quote">这是对这个词的说明，不是对你的判断。</p></details>`;
+  return `<details class="basis"><summary>${esc(label)}</summary><p>${esc(k.definition)}</p><p class="quote">${origin}</p><p class="quote">${note}</p></details>`;
 }
 
 let turnInsight = null; // 这一轮的模式和风险，决定要不要问"记住这件事吗"
@@ -268,6 +268,13 @@ function renderInsight(ev) {
   }
   els.insightBody.innerHTML = html;
   els.notmeHint.classList.toggle('hidden', !insightItems.length);
+}
+
+// 关系模式这次回复参考的沟通知识：给到模型的条目，不代表每条都用上了
+function renderKnowledge(ev) {
+  if (!ev.items?.length) return;
+  const list = ev.items.map((k) => basisHTML(k, k.title, '这是沟通方式的参考，不是对你或对方的判断。')).join('');
+  els.insightBody.insertAdjacentHTML('beforeend', `<div class="basis-group"><div class="quote">这次回复可参考的沟通知识</div>${list}</div>`);
 }
 
 // 「不准」：只收回这一条；下一轮把它告诉后端，这次对话里不再这样说（新对话清零）
@@ -452,6 +459,7 @@ async function send(text) {
     switch (ev.type) {
       case 'status': setStatus(ev.content); break;
       case 'insight': renderInsight(ev); break;
+      case 'knowledge': renderKnowledge(ev); break;
       case 'decision': {
         // 选项和方面没变 → 保留已有打分；变了 → 旧分数作废，等下次开会
         // 选项或方面变了：上次的打分先留着（标成"上次开会的结果"），下次开会再更新

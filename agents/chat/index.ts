@@ -1,5 +1,5 @@
 import { createLogger, createSSEResponse, jsonResponse, sseEvent } from '../_shared';
-import { createModel, getAgentEnv } from '../_model';
+import { createEmbedder, createModel, getAgentEnv } from '../_model';
 import { buildGraph, crisisFallback, friendlyError, type Rejection } from './_graph';
 
 const logger = createLogger('chat');
@@ -160,7 +160,7 @@ export async function onRequest(context: any) {
 
   let graph = graphCache.get(checkpointer);
   if (!graph) {
-    graph = buildGraph(createModel(agentEnv, 'analyst'), createModel(agentEnv, 'speaker'), checkpointer, lgStore, createModel(agentEnv, 'seat'));
+    graph = buildGraph(createModel(agentEnv, 'analyst'), createModel(agentEnv, 'speaker'), checkpointer, lgStore, createModel(agentEnv, 'seat'), createEmbedder(agentEnv));
     graphCache.set(checkpointer, graph);
   }
 

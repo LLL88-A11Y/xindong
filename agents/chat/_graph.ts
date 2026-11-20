@@ -4,7 +4,7 @@ import { AIMessage, HumanMessage, SystemMessage, type AIMessageChunk, type BaseM
 import type { ChatOpenAI } from '@langchain/openai';
 import * as P from './_prompts';
 import { KNOWLEDGE, type KnowledgeEntry } from './_knowledge';
-import { definition } from './_retrieve';
+import { definition, searchKnowledge, type Embedder } from './_retrieve';
 
 // ---------- 类型 ----------
 
@@ -298,10 +298,11 @@ function usageEvent(node: string, started: number, u?: { input_tokens?: number; 
 
 // ---------- 构图 ----------
 
-export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointer: any, store: any, seatModel: ChatOpenAI = speaker) {
+export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointer: any, store: any, seatModel: ChatOpenAI = speaker, embedder?: (text: string, signal?: AbortSignal) => ReturnType<Embedder>) {
   // 让某个角色发言：流式推送给前端，并把完整发言存进对话历史。
   // options：会议角色传入决策选项，第一行的"倾向：……"会被拆成 stance 事件（徽章）；model：会议角色用 seatModel
-  async function speak(role: Role, system: string, context: string, config: LangGraphRunnableConfig, options?: string[], model: ChatOpenAI = speaker): Promise<AIMessage> {
+  // tail：发言结束后由代码补上的文字，模型出错时也会发
+  async function speak(role: Role, system: string, context: string, config: LangGraphRunnableConfig, options?: string[], model: ChatOpenAI = speaker, tail?: (text: string) => string): Promise<AIMessage> {
     const write = config.writer ?? (() => {});
     write({ type: 'speaker', role });
     let full = '';
@@ -347,6 +348,7 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
       write({ type: 'error_message', role, content: friendlyError(e) });
     }
     if (head) flushHead(head);
+    if (tail) emit(tail(full));
     write(usageEvent(role, started, usage));
     write({ type: 'speaker_end', role });
     return new AIMessage({ content: full, name: role, additional_kwargs: stance ? { stance } : {} });
@@ -462,8 +464,17 @@ export function buildGraph(analyst: ChatOpenAI, speaker: ChatOpenAI, checkpointe
 
   // 关系模式：我听到的 → 换到对方那边看看 → 可以这样说（非暴力沟通的回复草稿）
   async function relation(state: S, config: LangGraphRunnableConfig) {
-    const sys = P.RELATION_PROMPT + concernSuffix(state);
-    return { messages: [await speak('host', sys, ctx(state), config)], turn: null };
+    const write = config.writer ?? (() => {});
+    const latest = latestUserText(state.messages);
+    // 排序只用用户自己的话；紧急条目看完整消息，对方说的威胁也算
+    const started = Date.now();
+    const found = await searchKnowledge(ownWords(latest), latest, '非暴力沟通', 4, embedder && ((text) => embedder(text, config.signal)));
+    write({ ...usageEvent('embed', started, { input_tokens: found.tokens }), vector: found.vector });
+    if (found.entries.length) write({ type: 'knowledge', urgent: found.urgent, items: found.entries.map((e) => ({ ...citation(e), title: e.title })) });
+    const sys = P.RELATION_PROMPT + concernSuffix(state) + P.relationKnowledge(found.entries, found.urgent);
+    // 提示词不能保证模型照做，涉及人身安全时求助方式由代码兜底
+    const tail = found.urgent ? (text: string) => (text.includes('110') ? '' : `${text ? '\n\n' : ''}${P.RELATION_SAFETY_TAIL}`) : undefined;
+    return { messages: [await speak('host', sys, ctx(state), config, undefined, speaker, tail)], turn: null };
   }
 
   // 信息够开会了：先问一句。固定文字，列出选项和在乎的方面，前端在下面放一个「现在开会」按钮

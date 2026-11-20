@@ -26,9 +26,9 @@ class FlakySaver extends MemorySaver {
   async putWrites(...args) { if (this.fail === '写入') throw storageError(); return super.putWrites(...args); }
 }
 
-async function send(message, fail) {
+async function send(message, fail, mode) {
   const response = await onRequest({
-    request: { body: { messages: [{ role: 'user', content: message }] }, headers: new Headers() },
+    request: { body: { messages: [{ role: 'user', content: message }], mode }, headers: new Headers() },
     env: { LLM_BASE_URL: 'http://127.0.0.1:9/v1', LLM_API_KEY: 'test', LLM_MODEL: 'test-model' },
     conversation_id: `fault-${Math.random()}`,
     store: { langgraphCheckpointer: new FlakySaver(fail), langgraphStore: new InMemoryStore() },
@@ -49,11 +49,12 @@ const CASES = [
   ['危机 · 中间写入失败', CRISIS, '写入', safe],
   ['危机 · 读取失败', CRISIS, '读取', safe],
   ['普通消息 · 读取失败（要如实报错）', NORMAL, '读取', (r) => r.errors.length > 0 && !r.reply.includes('12356')],
+  ['关系模式涉及人身安全 · 模型和向量接口都不可用', '他昨天打了我一巴掌', '', (r) => r.reply.includes('110') && r.reply.includes('12338'), 'relation'],
 ];
 
 let failed = 0;
-for (const [name, message, fail, ok] of CASES) {
-  const r = await send(message, fail);
+for (const [name, message, fail, ok, mode] of CASES) {
+  const r = await send(message, fail, mode);
   const pass = ok(r);
   if (!pass) failed++;
   console.log(`${pass ? '✓' : '✗'} ${name}${pass ? '' : `　回复=${JSON.stringify(r.reply.slice(0, 24))} 报错=${JSON.stringify(r.errors)}`}`);

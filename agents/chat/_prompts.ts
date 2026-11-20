@@ -1,5 +1,5 @@
 // 心懂的所有提示词。角色发言统一要求：口语化、简短、不说教。
-import { KNOWLEDGE } from './_knowledge';
+import { KNOWLEDGE, type KnowledgeEntry } from './_knowledge';
 import { definition } from './_retrieve';
 
 // 分析员用的知识：条目少，定义全放进固定提示词，不走检索（漏检会让正确的卡片消失），还能吃到前缀缓存
@@ -175,6 +175,17 @@ basis 表示这一格分数的依据：
 宁可标 guess，也不要把猜的说成用户说的。
 输出格式：{"scores": [{"option": "选项原文", "criterion": "方面原文", "score": 7, "basis": "said", "reason": "……"}]}
 必须覆盖所有 选项×方面 组合，option 和 criterion 必须与决策信息里的文字完全一致。`;
+
+// 关系模式：检索到的沟通知识接在提示词后面，前面的固定部分仍能命中缓存
+const RELATION_URGENT = `【安全优先】用户的话里可能涉及动手、威胁、跟踪或控制。这一段优先于上面所有的格式要求，包括"先问最近发生了什么"。这次不写三小段，不写"换到对方那边看看"，不猜对方的需要，不写发给对方的话，也不判断对方是什么样的人。先接住他，然后必须问他现在是否安全、身边有没有能帮忙的人，并写出：紧急时打 110，遭受家庭暴力可打 12338。如果这些词明显只是字面巧合（如"动手做饭"），忽略这一段，照常回复。`;
+
+export const RELATION_SAFETY_TAIL = '如果你现在觉得不安全，或者担心对方会伤害你：紧急时请打 **110**，遭受家庭暴力可以打 **12338**，也可以先告诉一个你信任的人。';
+
+export function relationKnowledge(entries: KnowledgeEntry[], urgent: boolean): string {
+  if (!entries.length) return '';
+  const list = entries.map((e) => `- ${e.title}\n${e.body.replace(/\*\*/g, '').replace(/（[A-Z]\d{2,3}）/g, '')}`).join('\n');
+  return `${urgent ? `\n\n${RELATION_URGENT}` : ''}\n\n【这次可参考的沟通知识】只在确实贴合用户情况时使用，不贴合就忽略。不要提书名、编号或"非暴力沟通"这个词；不得用来评判用户或对方；关于对方的说法仍然只能是"也许"。\n${list}`;
+}
 
 // 底层原则"不用过去推断现在"的唯一例外：只记"出现过危险信号"这件事，只用于风险判断
 export const RECENT_CRISIS_NOTE = `【安全提示】这段对话之前出现过危险信号。这条提示只用于判断 risk：如果用户这条消息意思含糊（如"算了""都无所谓了"），从严判断，至少给 "concern"；明显是日常内容时照常判断，不要因为这条提示就给 "high"。它不是对用户的判断，不得用来解读情绪或思维陷阱。`;

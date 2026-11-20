@@ -29,6 +29,31 @@ export function getAgentEnv(contextEnv: Record<string, string | undefined> | und
   };
 }
 
+// 向量化一句话，用于知识检索。超时或出错就抛出，由调用方退回关键词检索，不能让用户干等
+const EMBED_TIMEOUT_MS = 1500;
+export function createEmbedder(env: AgentEnv) {
+  return async (text: string, signal?: AbortSignal): Promise<{ vector: number[]; tokens: number }> => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), EMBED_TIMEOUT_MS);
+    const onAbort = () => ctrl.abort();
+    signal?.addEventListener('abort', onAbort, { once: true });
+    try {
+      const resp = await fetch(`${env.AI_GATEWAY_BASE_URL.replace(/\/$/, '')}/embeddings`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${env.AI_GATEWAY_API_KEY}` },
+        body: JSON.stringify({ model: 'embedding-3', input: [text], dimensions: 512 }),
+        signal: ctrl.signal,
+      });
+      if (!resp.ok) throw new Error(`embedding HTTP ${resp.status}`);
+      const json = await resp.json() as { data: Array<{ embedding: number[] }>; usage?: { total_tokens?: number } };
+      return { vector: json.data[0].embedding, tokens: json.usage?.total_tokens ?? 0 };
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+    }
+  };
+}
+
 // 三个实例：
 // - analyst：低温度（稳定的 JSON）；安全判断、证据、打分依据靠它
 // - speaker：心懂本人发言（倾听、追问、总结），高温度；原则相关的分寸靠它

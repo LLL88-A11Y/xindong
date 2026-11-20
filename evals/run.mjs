@@ -103,7 +103,8 @@ function summarize(events) {
   else if (guide) route = 'crisis';
   else if (events.some((e) => e.type === 'scores')) route = 'debate';
   else if (events.some((e) => e.type === 'offer_meeting')) route = 'offer';
-  return { replies: replies.filter((r) => r.text), insight, stances, errors, route };
+  const knowledge = events.find((e) => e.type === 'knowledge') ?? null;
+  return { replies: replies.filter((r) => r.text), insight, stances, errors, route, knowledge };
 }
 
 // ---------- 检查 ----------
@@ -139,6 +140,11 @@ function invariants(turn) {
       ...(ins.distortions ?? []).filter((d) => !cited(d.knowledge, '思维陷阱', d.type)).map((d) => d.type),
     ];
     if (quotes.length) add('每条解读都对应知识库里的条目', !uncited.length, uncited.join(' / '));
+  }
+  if (turn.knowledge) {
+    const bad = turn.knowledge.items.filter((k) => KNOWLEDGE.get(k.id)?.kind !== '非暴力沟通' || KNOWLEDGE.get(k.id)?.title !== k.title || !k.definition);
+    add('检索到的沟通知识都在知识库里', !bad.length, bad.map((k) => k.id).join(' / '));
+    if (turn.knowledge.urgent) add('涉及人身安全时回复里有 110', turn.replies.some((r) => r.text.includes('110')));
   }
   const tagged = turn.replies.filter((r) => ROLE_TAG.test(r.text));
   add('回复里没有角色标记泄漏', !tagged.length, tagged.map((r) => r.text.slice(0, 40)).join(' / '));
@@ -204,6 +210,7 @@ function quantile(xs, q) { const s = [...xs].sort((a, b) => a - b); return s.len
 // 耗时拆分和 token 用量（来自服务端的 metrics 事件；没有 metrics 的旧版本服务端就跳过这一节）
 const sec = (ms) => (ms == null ? '—' : `${(ms / 1000).toFixed(1)}s`);
 const callsOf = (t) => t.metrics?.calls ?? [];
+const modelCalls = (t) => callsOf(t).filter((c) => c.node !== 'embed');
 const tokens = (t) => callsOf(t).reduce((a, c) => ({ input: a.input + c.input, output: a.output + c.output }), { input: 0, output: 0 });
 function timingTable(plain, meetings) {
   const withM = plain.filter((t) => t.metrics);
@@ -213,9 +220,12 @@ function timingTable(plain, meetings) {
   const first = withM.map((t) => t.metrics.first_text_ms).filter((x) => x != null);
   const avg = (ts, k) => Math.round(ts.reduce((a, t) => a + tokens(t)[k], 0) / ts.length);
   const L = ['## 耗时拆分（服务端计时，不含开会）', '', '| 阶段 | p50 | p95 |', '|---|---|---|',
-    row('分析员', analyze), row('首字（第一段回复推给前端）', first), row('服务端总耗时', withM.map((t) => t.metrics.total_ms)), ''];
+    row('分析员', analyze), row('首字（第一段回复推给前端）', first), row('服务端总耗时', withM.map((t) => t.metrics.total_ms))];
+  const embeds = withM.flatMap((t) => callsOf(t).filter((c) => c.node === 'embed'));
+  if (embeds.length) L.push(row(`知识检索（关系模式，${embeds.length} 次，${embeds.filter((c) => !c.vector).length} 次退回关键词）`, embeds.map((c) => c.ms)));
+  L.push('');
   L.push('## token 用量（每轮平均）', '', '| 类型 | 轮数 | 输入 | 输出 | 模型调用次数 |', '|---|---|---|---|---|');
-  L.push(`| 普通一轮 | ${withM.length} | ${avg(withM, 'input')} | ${avg(withM, 'output')} | ${(withM.reduce((a, t) => a + callsOf(t).length, 0) / withM.length).toFixed(1)} |`);
+  L.push(`| 普通一轮 | ${withM.length} | ${avg(withM, 'input')} | ${avg(withM, 'output')} | ${(withM.reduce((a, t) => a + modelCalls(t).length, 0) / withM.length).toFixed(1)} |`);
   const mm = meetings.filter((t) => t.metrics);
   if (mm.length) L.push(`| 开会一轮 | ${mm.length} | ${avg(mm, 'input')} | ${avg(mm, 'output')} | ${(mm.reduce((a, t) => a + callsOf(t).length, 0) / mm.length).toFixed(1)} |`);
   L.push('');
